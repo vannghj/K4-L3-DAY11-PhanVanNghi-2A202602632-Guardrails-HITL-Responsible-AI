@@ -1,5 +1,28 @@
 # Day 11 — Controlled Agent Security (2026)
 
+## Thông tin bài nộp
+
+- **Họ tên:** Phan Van Nghi
+- **MSSV:** 2A202602632
+- **Bonus chọn:** B1 (leak Red)
+- **Ghi chú model Blue:** `liquid/lfm-2.5-2.6b` trên OpenRouter không có endpoint (404) lúc làm lab,
+  nên dùng cùng model bản `liquid/lfm-2.5-2.6b:free` (`src/core/config.py`).
+
+**Cách chạy (từ gốc repo):**
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env            # điền OPENROUTER_API_KEY + OPENAI_API_KEY
+python src/main.py --part 2     # CP2 — guardrails
+python src/main.py --part 3     # CP3 — outputs/results.json, audit_log.json, metrics.json
+python src/main.py --part 4     # CP4 — outputs/attack_results.json
+pytest tests/smoke tests/public -q
+python scripts/grade.py --submission-dir . --out outputs/grade_report.json
+```
+
+---
+
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  
 > 🎯 **Mục tiêu:** xây **Blue** (phòng thủ), rồi red-team **Red** + **Red Advance**.  
 > ✅ Làm theo **Checkpoint 1 → 5** trong [`CHECKPOINTS.md`](CHECKPOINTS.md) · nộp theo [`SUBMISSION.md`](SUBMISSION.md).
