@@ -12,7 +12,18 @@ from google.adk.agents import llm_agent
 from google.adk import runners
 from google.adk.plugins import base_plugin
 
+from core.config import DEMO_SECRETS
 from core.utils import chat_with_agent
+
+
+def _obfuscation_tolerant(secret: str) -> str:
+    """Regex matching a secret even when split by spaces/dots/dashes (a d m i n 1 2 3)."""
+    chars = [re.escape(c) for c in secret if c.isalnum()]
+    return r"[\W_]{0,3}".join(chars)
+
+
+# Known internal secrets (data/protected/vinbank_secrets.json), obfuscation tolerant
+_SECRET_PATTERNS = [_obfuscation_tolerant(s) for s in DEMO_SECRETS if s]
 
 
 # ============================================================
@@ -41,18 +52,26 @@ def content_filter(response: str) -> dict:
 
     # PII patterns to check
     PII_PATTERNS = {
-        # TODO: Add regex patterns for:
-        # - VN phone number: r"0\d{9,10}"
-        # - Email: r"[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}"
-        # - National ID (CMND/CCCD): r"\b\d{9}\b|\b\d{12}\b"
-        # - API key pattern: r"sk-[a-zA-Z0-9-]+"
-        # - Password pattern: r"password\s*[:=]\s*\S+"
+        # 10-11 digit VN mobile/landline; \b keeps a 12-digit CCCD from matching
+        "phone": r"(?:\+84|\b0)\d{9,10}\b",
+        "email": r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}",
+        "national_id": r"\b\d{9}\b|\b\d{12}\b",
+        "api_key": r"\bsk-[a-zA-Z0-9-]{6,}",
+        "password": r"(?:password|passwd|pwd|m[aậ]t\s*kh[aẩ]u)\s*(?:is|l[aà]|[:=])\s*\S+",
+        "internal_host": r"\b[\w-]+(?:\.[\w-]+)*\.internal(?::\d+)?\b",
     }
 
     for name, pattern in PII_PATTERNS.items():
         matches = re.findall(pattern, response, re.IGNORECASE)
         if matches:
             issues.append(f"{name}: {len(matches)} found")
+            redacted = re.sub(pattern, "[REDACTED]", redacted, flags=re.IGNORECASE)
+
+    # Catch known secrets that survived the generic patterns (e.g. "a-d-m-i-n-1-2-3")
+    for pattern in _SECRET_PATTERNS:
+        if re.search(pattern, redacted, re.IGNORECASE):
+            if "secret" not in issues:
+                issues.append("secret: known internal secret found")
             redacted = re.sub(pattern, "[REDACTED]", redacted, flags=re.IGNORECASE)
 
     return {
@@ -172,16 +191,26 @@ class OutputGuardrailPlugin(base_plugin.BasePlugin):
         if not response_text:
             return llm_response
 
-        # TODO: Implement logic:
-        # 1. Call content_filter(response_text)
-        #    - If issues found: replace llm_response.content with redacted version
-        #    - Increment self.redacted_count
-        # 2. If use_llm_judge: call llm_safety_check(response_text)
-        #    - If unsafe: replace llm_response.content with a safe message
-        #    - Increment self.blocked_count
-        # 3. Return llm_response (possibly modified)
+        result = content_filter(response_text)
+        if not result["safe"]:
+            self.redacted_count += 1
+            response_text = result["redacted"]
+            llm_response.content = types.Content(
+                role="model", parts=[types.Part.from_text(text=response_text)]
+            )
 
-        return llm_response  # TODO: modify if needed
+        if self.use_llm_judge:
+            judge = await llm_safety_check(response_text)
+            if not judge["safe"]:
+                self.blocked_count += 1
+                llm_response.content = types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(
+                        text="I'm sorry, I can't share that. Please contact VinBank support."
+                    )],
+                )
+
+        return llm_response
 
 
 # ============================================================
