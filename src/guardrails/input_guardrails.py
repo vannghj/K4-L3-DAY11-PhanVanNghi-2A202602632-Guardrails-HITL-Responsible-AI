@@ -102,6 +102,17 @@ def detect_injection(user_input: str) -> InputStatus:
 # Return ``"ALLOW"`` if banking-related and OK.
 # ============================================================
 
+# Extra banking vocabulary (diacritics stripped) on top of config.ALLOWED_TOPICS,
+# matched as whole words so "coffee" != "fee", "shopping" != "pin". Cuts false
+# positives such as "How do I reset my PIN?" or "Tỷ giá đô la hôm nay?".
+EXTRA_BANKING_TERMS = [
+    "bank", "card", "cards", "pin", "otp", "fee", "fees", "mortgage", "exchange rate",
+    "currency", "branch", "bill", "bills", "pay", "statement", "cheque", "iban", "swift",
+    "passbook", "wallet", "mat the", "khoa the", "the atm", "the ghi no", "phi", "ty gia", "chi nhanh", "rut tien", "nop tien",
+    "sao ke", "ma pin", "hoa don", "vi dien tu", "khoan vay",
+]
+
+
 def topic_filter(user_input: str) -> InputStatus:
     """Decide whether the input is on-topic for VinBank.
 
@@ -119,7 +130,10 @@ def topic_filter(user_input: str) -> InputStatus:
     # Prefix word-boundary: "hacking" is blocked, "skill" is not caught by "kill"
     if any(re.search(rf"\b{re.escape(topic)}", input_lower) for topic in BLOCKED_TOPICS):
         return "BLOCK"
-    if not any(topic in input_lower for topic in ALLOWED_TOPICS):
+    on_topic = any(topic in input_lower for topic in ALLOWED_TOPICS) or any(
+        re.search(rf"\b{re.escape(term)}\b", input_lower) for term in EXTRA_BANKING_TERMS
+    )
+    if not on_topic:
         return "BLOCK"
     return "ALLOW"
 
